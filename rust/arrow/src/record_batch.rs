@@ -33,7 +33,7 @@ use crate::error::{ArrowError, Result};
 /// datatypes.
 ///
 /// Record batches are a convenient unit of work for various
-/// serialization and computation functions, possibly incremental.  
+/// serialization and computation functions, possibly incremental.
 /// See also [CSV reader](crate::csv::Reader) and
 /// [JSON reader](crate::json::Reader).
 #[derive(Clone, Debug)]
@@ -95,6 +95,8 @@ impl RecordBatch {
 
         for (i, column) in columns.iter().enumerate() {
             if column.len() != len {
+                dbg!(&column);
+                dbg!(&columns[0].data());
                 return Err(ArrowError::InvalidArgumentError(
                     "all columns in a record batch must have the same length".to_string(),
                 ));

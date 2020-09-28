@@ -176,15 +176,65 @@ fn write_leaves(
             }
             Ok(())
         }
+        ArrowDataType::Dictionary(_, _) => {
+            let mut col_writer = get_col_writer(&mut row_group_writer)?;
+            write_dictionary(&mut col_writer, array, levels.pop().expect("Levels exhausted"))?;
+            row_group_writer.close_column(col_writer)?;
+            Ok(())
+        }
         ArrowDataType::FixedSizeList(_, _)
         | ArrowDataType::Null
         | ArrowDataType::Boolean
         | ArrowDataType::FixedSizeBinary(_)
-        | ArrowDataType::Union(_)
-        | ArrowDataType::Dictionary(_, _) => Err(ParquetError::NYI(
+        | ArrowDataType::Union(_) => Err(ParquetError::NYI(
             "Attempting to write an Arrow type that is not yet implemented".to_string(),
         )),
     }
+}
+
+fn write_dictionary(
+    writer: &mut ColumnWriter,
+    column: &arrow_array::ArrayRef,
+    levels: Levels,
+) -> Result<i64> {
+    let written = match writer {
+        ColumnWriter::Int32ColumnWriter(ref mut typed) => {
+            unimplemented!("i32 dicts");
+        }
+        ColumnWriter::Int64ColumnWriter(ref mut typed) => {
+            unimplemented!("i64 dicts");
+        }
+        ColumnWriter::Int96ColumnWriter(ref mut typed) => {
+            unimplemented!("i96 dicts");
+        }
+        ColumnWriter::FloatColumnWriter(ref mut typed) => {
+            unimplemented!("float dicts");
+        }
+        ColumnWriter::DoubleColumnWriter(ref mut typed) => {
+            unimplemented!("double dicts");
+        }
+        ColumnWriter::ByteArrayColumnWriter(ref mut typed) => match column.data_type() {
+            ArrowDataType::Utf8 => {
+               let array = arrow_array::BinaryArray::from(column.data());
+               typed.write_batch(
+                   get_binary_array(&array).as_slice(),
+                   Some(levels.definition.as_slice()),
+                   levels.repetition.as_deref(),
+               )?
+           }
+           ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::LargeUtf8 => {
+               unimplemented!("can these types be arrow dict value types?");
+           }
+           _ => unreachable!("Currently unreachable because data type not supported"),
+        }
+        ColumnWriter::FixedLenByteArrayColumnWriter(ref mut typed) => {
+            unimplemented!("flba dicts");
+        }
+        ColumnWriter::BoolColumnWriter(ref mut _typed) => {
+            unreachable!("Currently unreachable because data type not supported")
+        }
+    };
+    Ok(3)
 }
 
 fn write_leaf(
@@ -270,6 +320,7 @@ struct Levels {
 }
 
 /// Compute nested levels of the Arrow array, recursing into lists and structs
+// possibly match up with tests in cpp/src/parquet/arrow/path_internal_test.cc
 fn get_levels(
     array: &arrow_array::ArrayRef,
     level: i16,
@@ -421,7 +472,16 @@ fn get_levels(
             struct_levels
         }
         ArrowDataType::Union(_) => unimplemented!(),
-        ArrowDataType::Dictionary(_, _) => unimplemented!(),
+        ArrowDataType::Dictionary(_, _) => {
+            // Need to check for these cases not implemented in C++:
+            // - "Writing DictionaryArray with nested dictionary type not yet supported"
+            // - "Writing DictionaryArray with null encoded in dictionary type not yet supported"
+            // TODO: is this correct????
+            vec![Levels {
+                definition: get_primitive_def_levels(array, parent_def_levels),
+                repetition: None,
+            }]
+        },
     }
 }
 
@@ -498,6 +558,33 @@ mod tests {
     use crate::arrow::{ArrowReader, ParquetFileArrowReader};
     use crate::file::{metadata::KeyValue, reader::SerializedFileReader};
     use crate::util::test_common::get_temp_file;
+    //
+    // #[test]
+    // fn get_levels_non_nullable_single_list_non_nullable_entries() {
+    //     // Construct a value array
+    //     let value_data = ArrayData::builder(DataType::Int64)
+    //         .len(6)
+    //         .add_buffer(Buffer::from(&[1, 2, 3, 4, 5, 6].to_byte_slice()))
+    //         .build();
+    //
+    //     // Construct a buffer for value offsets, for the nested array:
+    //     //  [[1], [2, 3], [4, 5, 6]]
+    //     let value_offsets = Buffer::from(&[0i64, 1, 3, 6].to_byte_slice());
+    //
+    //     // Construct a list array from the above two
+    //     let list_data_type = DataType::LargeList(Box::new(DataType::Int64));
+    //     let list_data = ArrayData::builder(list_data_type.clone())
+    //         .len(3)
+    //         .add_buffer(value_offsets.clone())
+    //         .add_child_data(value_data.clone())
+    //         .build();
+    //     let list_array = LargeListArray::from(list_data);
+    //
+    //     let levels = get_levels(list_array, 0, &vec![1i16; 6][..], None);
+    //
+    //     assert_eq!(levels.definition, &[]);
+    //     assert_eq!(levels.repetition, &[]);
+    // }
 
     #[test]
     fn arrow_writer() {
@@ -635,6 +722,13 @@ mod tests {
                 DataType::Struct(vec![struct_field_d.clone(), struct_field_e.clone()]),
                 false,
             ),
+            Field::new_dict(
+                "dict",
+                DataType::Dictionary(Box::new(DataType::Int8), Box::new(DataType::Utf8)),
+                true,
+                123,
+                true
+            ),
         ]);
 
         // create some data
@@ -668,10 +762,13 @@ mod tests {
             (struct_field_e, Arc::new(e) as ArrayRef),
         ]);
 
+        let dict_strs = vec!["t3", "t3", "t2", "t2", "t1"];
+        let dict_array: Int8DictionaryArray = dict_strs.into_iter().collect();
+
         // build a record batch
         let batch = RecordBatch::try_new(
             Arc::new(schema.clone()),
-            vec![Arc::new(a), Arc::new(b), Arc::new(c)],
+            vec![Arc::new(a), Arc::new(b), Arc::new(c), Arc::new(dict_array)],
         )
         .unwrap();
 

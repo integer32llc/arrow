@@ -2434,6 +2434,7 @@ TEST(TestArrowReadWrite, CanonicalNestedRoundTrip) {
   CheckSimpleRoundtrip(expected, 2);
 }
 
+// THIS TEST LOOKS RELEVANT
 TEST(TestArrowReadWrite, DictionaryColumnChunkedWrite) {
   // This is a regression test for this:
   //
@@ -3053,7 +3054,7 @@ TEST(TestArrowWriterAdHoc, SchemaMismatch) {
 
 // ----------------------------------------------------------------------
 // Tests for directly reading DictionaryArray
-
+// THIS LOOKS RELEVANT
 class TestArrowReadDictionary : public ::testing::TestWithParam<double> {
  public:
   static constexpr int kNumRowGroups = 16;
@@ -3263,6 +3264,7 @@ TEST(TestArrowWriteDictionaries, ChangingDictionaries) {
   ::arrow::AssertTablesEqual(*expected, *actual, /*same_chunk_layout=*/false);
 }
 
+// THIS LOOKS RELEVANT
 TEST(TestArrowWriteDictionaries, AutoReadAsDictionary) {
   constexpr int num_unique = 50;
   constexpr int repeat = 100;

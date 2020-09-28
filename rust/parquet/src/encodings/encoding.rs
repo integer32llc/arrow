@@ -345,6 +345,23 @@ impl<T: DataType> DictEncoder<T> {
     }
 
     #[inline]
+    fn put_dict(&mut self, values: &[T::T]) -> Result<()> {
+        // TODO:
+        // if values.null_count() > 0 {
+        //     return Err(general_err!("Inserted dictionary cannot cannot contain nulls"));
+        // }
+        //
+        // if !self.uniques.is_empty() {
+        //     return Err(general_err!("Can only call put_dict on an empty DictEncoder"));
+        // }
+        // TODO: more of a "raw" setting of the whole slice at once
+        for v in values {
+            self.add_dict_key(v.clone());
+        }
+        Ok(())
+    }
+
+    #[inline]
     fn add_dict_key(&mut self, value: T::T) {
         self.uniques_size_in_bytes += self.get_encoded_size(&value);
         self.uniques.push(value);
