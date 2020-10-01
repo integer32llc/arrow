@@ -353,8 +353,9 @@ fn arrow_to_parquet_type(field: &Field) -> Result<Type> {
                 .build()
         }
         DataType::Union(_) => unimplemented!("See ARROW-8817."),
-        DataType::Dictionary(ref key, _) => {
-            let dict_field = Field::new(name, DataType::clone(key), field.is_nullable());
+        DataType::Dictionary(_, ref value) => {
+            // Dictionary encoding not handled at the schema level
+            let dict_field = Field::new(name, *value.clone(), field.is_nullable());
             arrow_to_parquet_type(&dict_field)
         }
     }

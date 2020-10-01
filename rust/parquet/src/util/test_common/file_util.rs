@@ -56,6 +56,8 @@ pub fn get_temp_file(file_name: &str, content: &[u8]) -> fs::File {
     fs::create_dir_all(&path_buf).unwrap();
     path_buf.push(file_name);
 
+    dbg!(path_buf.display());
+
     // write file content
     let mut tmp_file = fs::File::create(path_buf.as_path()).unwrap();
     tmp_file.write_all(content).unwrap();

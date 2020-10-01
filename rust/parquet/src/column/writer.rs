@@ -273,6 +273,7 @@ impl<T: DataType> ColumnWriterImpl<T> {
         null_count: Option<u64>,
         distinct_count: Option<u64>,
     ) -> Result<usize> {
+        dbg!("writing", values);
         // We check for DataPage limits only after we have inserted the values. If a user
         // writes a large number of values, the DataPage size can be well above the limit.
         //
