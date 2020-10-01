@@ -151,6 +151,8 @@ fn write_leaves(
         | ArrowDataType::Utf8
         | ArrowDataType::LargeUtf8 => {
             let mut col_writer = get_col_writer(&mut row_group_writer)?;
+            dbg!(array.data_type());
+
             write_leaf(
                 &mut col_writer,
                 array,
@@ -176,11 +178,41 @@ fn write_leaves(
             }
             Ok(())
         }
-        ArrowDataType::Dictionary(_, _) => {
-            let mut col_writer = get_col_writer(&mut row_group_writer)?;
-            write_dictionary(&mut col_writer, array, levels.pop().expect("Levels exhausted"))?;
-            row_group_writer.close_column(col_writer)?;
-            Ok(())
+        ArrowDataType::Dictionary(k, _) => {
+            match &**k {
+                ArrowDataType::Int32 => {
+                   let dict_array: &arrow_array::Int32DictionaryArray = array
+                       .as_any()
+                       .downcast_ref()
+                       .expect("Unable to get dictionary array");
+                    dbg!(dict_array);
+
+                    let keys = dict_array.keys_array();
+                    let child_array = arrow_array::make_array(keys.data());
+
+//                    let child_array = dict_array.values();
+
+
+  //                  let data = dict_array.data();
+
+                    // let data = array.;
+                    // let child_array = arrow_array::make_array(data.child_data()[0].clone());
+
+                    // let mut col_writer = get_col_writer(&mut row_group_writer)?;
+                    // write_leaf(
+                    //     &mut col_writer,
+                    //     &child_array,
+                    //     levels.pop().expect("Levels exhausted"),
+                    // )?;
+                    // row_group_writer.close_column(col_writer)?;
+
+                    write_leaves(&mut row_group_writer, &child_array, &mut levels)?;
+
+                    Ok(())
+
+                }
+                o => unimplemented!("don't know key {:?} yet", o),
+            }
         }
         ArrowDataType::FixedSizeList(_, _)
         | ArrowDataType::Null
@@ -192,50 +224,50 @@ fn write_leaves(
     }
 }
 
-fn write_dictionary(
-    writer: &mut ColumnWriter,
-    column: &arrow_array::ArrayRef,
-    levels: Levels,
-) -> Result<i64> {
-    let written = match writer {
-        ColumnWriter::Int32ColumnWriter(ref mut typed) => {
-            unimplemented!("i32 dicts");
-        }
-        ColumnWriter::Int64ColumnWriter(ref mut typed) => {
-            unimplemented!("i64 dicts");
-        }
-        ColumnWriter::Int96ColumnWriter(ref mut typed) => {
-            unimplemented!("i96 dicts");
-        }
-        ColumnWriter::FloatColumnWriter(ref mut typed) => {
-            unimplemented!("float dicts");
-        }
-        ColumnWriter::DoubleColumnWriter(ref mut typed) => {
-            unimplemented!("double dicts");
-        }
-        ColumnWriter::ByteArrayColumnWriter(ref mut typed) => match column.data_type() {
-            ArrowDataType::Utf8 => {
-               let array = arrow_array::BinaryArray::from(column.data());
-               typed.write_batch(
-                   get_binary_array(&array).as_slice(),
-                   Some(levels.definition.as_slice()),
-                   levels.repetition.as_deref(),
-               )?
-           }
-           ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::LargeUtf8 => {
-               unimplemented!("can these types be arrow dict value types?");
-           }
-           _ => unreachable!("Currently unreachable because data type not supported"),
-        }
-        ColumnWriter::FixedLenByteArrayColumnWriter(ref mut typed) => {
-            unimplemented!("flba dicts");
-        }
-        ColumnWriter::BoolColumnWriter(ref mut _typed) => {
-            unreachable!("Currently unreachable because data type not supported")
-        }
-    };
-    Ok(3)
-}
+// fn write_dictionary(
+//     writer: &mut ColumnWriter,
+//     column: &arrow_array::ArrayRef,
+//     levels: Levels,
+// ) -> Result<i64> {
+//     let written = match writer {
+//         ColumnWriter::Int32ColumnWriter(ref mut typed) => {
+//             unimplemented!("i32 dicts");
+//         }
+//         ColumnWriter::Int64ColumnWriter(ref mut typed) => {
+//             unimplemented!("i64 dicts");
+//         }
+//         ColumnWriter::Int96ColumnWriter(ref mut typed) => {
+//             unimplemented!("i96 dicts");
+//         }
+//         ColumnWriter::FloatColumnWriter(ref mut typed) => {
+//             unimplemented!("float dicts");
+//         }
+//         ColumnWriter::DoubleColumnWriter(ref mut typed) => {
+//             unimplemented!("double dicts");
+//         }
+//         ColumnWriter::ByteArrayColumnWriter(ref mut typed) => match column.data_type() {
+//             ArrowDataType::Utf8 => {
+//                let array = arrow_array::BinaryArray::from(column.data());
+//                typed.write_batch(
+//                    get_binary_array(&array).as_slice(),
+//                    Some(levels.definition.as_slice()),
+//                    levels.repetition.as_deref(),
+//                )?
+//            }
+//            ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::LargeUtf8 => {
+//                unimplemented!("can these types be arrow dict value types?");
+//            }
+//            t => unreachable!("Currently unreachable because data type {:?} not supported", t),
+//         }
+//         ColumnWriter::FixedLenByteArrayColumnWriter(ref mut typed) => {
+//             unimplemented!("flba dicts");
+//         }
+//         ColumnWriter::BoolColumnWriter(ref mut _typed) => {
+//             unreachable!("Currently unreachable because data type not supported")
+//         }
+//     };
+//     Ok(3)
+// }
 
 fn write_leaf(
     writer: &mut ColumnWriter,
@@ -302,7 +334,7 @@ fn write_leaf(
                     levels.repetition.as_deref(),
                 )?
             }
-            _ => unreachable!("Currently unreachable because data type not supported"),
+            x => unreachable!("Currently unreachable because data type {:?} not supported", x),
         },
         ColumnWriter::FixedLenByteArrayColumnWriter(ref mut _typed) => {
             unreachable!("Currently unreachable because data type not supported")
@@ -817,71 +849,28 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn arrow_writer_dictionary() {
         // define schema
         let schema = Arc::new(Schema::new(vec![
-            Field::new("dictionary", DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)), true),
+            Field::new_dict(
+                "dictionary",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+                42,
+                true
+            ),
         ]));
 
         // create some data
-
         use Int32DictionaryArray;
-        use StringDictionaryBuilder;
-
-        let k = Int32Builder::new(0);
-        let v = StringBuilder::new(0);
-        // let d = Arc::new(StringDictionaryBuilder::new(k, v) as ArrayRef);
-
-        // let a = Int32Array::from(vec![1, 2, 3, 4, 5]);
-        // let b = Int32Array::from(vec![Some(1), None, None, Some(4), Some(5)]);
-        // let d = Float64Array::from(vec![None, None, None, Some(1.0), None]);
-        // let f = Float32Array::from(vec![Some(0.0), None, Some(333.3), None, Some(5.25)]);
-
-        // let g_value = Int16Array::from(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-
-        // // Construct a buffer for value offsets, for the nested array:
-        // //  [[1], [2, 3], null, [4, 5, 6], [7, 8, 9, 10]]
-        // let g_value_offsets =
-        //     arrow::buffer::Buffer::from(&[0, 1, 3, 3, 6, 10].to_byte_slice());
-
-        // // Construct a list array from the above two
-        // let g_list_data = ArrayData::builder(struct_field_g.data_type().clone())
-        //     .len(5)
-        //     .add_buffer(g_value_offsets)
-        //     .add_child_data(g_value.data())
-        //     .build();
-        // let g = ListArray::from(g_list_data);
-
-        // let e = StructArray::from(vec![
-        //     (struct_field_f, Arc::new(f) as ArrayRef),
-        //     (struct_field_g, Arc::new(g) as ArrayRef),
-        // ]);
-
-        // let c = StructArray::from(vec![
-        //     (struct_field_d, Arc::new(d) as ArrayRef),
-        //     (struct_field_e, Arc::new(e) as ArrayRef),
-        // ]);
+        let d: Int32DictionaryArray = ["alpha", "beta", "alpha"].iter().copied().collect();
 
         // build a record batch
-        // let batch = RecordBatch::try_new(
-        //     schema.clone(),
-        //     //            vec![Arc::new(a), Arc::new(b), Arc::new(c)],
-        //     vec![d],
-        // )
-        // .unwrap();
+        let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(d)],) .unwrap();
 
-        // let props = WriterProperties::builder()
-        //     .set_key_value_metadata(Some(vec![KeyValue {
-        //         key: "test_key".to_string(),
-        //         value: Some("test_value".to_string()),
-        //     }]))
-        //     .build();
-
-        // let file = get_temp_file("test_arrow_writer_dictionary.parquet", &[]);
-        // let mut writer =
-        //     ArrowWriter::try_new(file, schema, None/* Some(props) */).unwrap();
-        // writer.write(&batch).unwrap();
-        // writer.close().unwrap();
+        let file = get_temp_file("test_arrow_writer_dictionary.parquet", &[]);
+        let mut writer = ArrowWriter::try_new(file, schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
     }
 }
