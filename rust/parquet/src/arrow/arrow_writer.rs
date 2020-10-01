@@ -688,4 +688,72 @@ mod tests {
         writer.write(&batch).unwrap();
         writer.close().unwrap();
     }
+
+    #[test]
+    fn arrow_writer_dictionary() {
+        // define schema
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("dictionary", DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)), true),
+        ]));
+
+        // create some data
+
+        use Int32DictionaryArray;
+        use StringDictionaryBuilder;
+
+        let k = Int32Builder::new(0);
+        let v = StringBuilder::new(0);
+        let d = Arc::new(StringDictionaryBuilder::new(k, v));
+
+        // let a = Int32Array::from(vec![1, 2, 3, 4, 5]);
+        // let b = Int32Array::from(vec![Some(1), None, None, Some(4), Some(5)]);
+        // let d = Float64Array::from(vec![None, None, None, Some(1.0), None]);
+        // let f = Float32Array::from(vec![Some(0.0), None, Some(333.3), None, Some(5.25)]);
+
+        // let g_value = Int16Array::from(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+        // // Construct a buffer for value offsets, for the nested array:
+        // //  [[1], [2, 3], null, [4, 5, 6], [7, 8, 9, 10]]
+        // let g_value_offsets =
+        //     arrow::buffer::Buffer::from(&[0, 1, 3, 3, 6, 10].to_byte_slice());
+
+        // // Construct a list array from the above two
+        // let g_list_data = ArrayData::builder(struct_field_g.data_type().clone())
+        //     .len(5)
+        //     .add_buffer(g_value_offsets)
+        //     .add_child_data(g_value.data())
+        //     .build();
+        // let g = ListArray::from(g_list_data);
+
+        // let e = StructArray::from(vec![
+        //     (struct_field_f, Arc::new(f) as ArrayRef),
+        //     (struct_field_g, Arc::new(g) as ArrayRef),
+        // ]);
+
+        // let c = StructArray::from(vec![
+        //     (struct_field_d, Arc::new(d) as ArrayRef),
+        //     (struct_field_e, Arc::new(e) as ArrayRef),
+        // ]);
+
+        // build a record batch
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            //            vec![Arc::new(a), Arc::new(b), Arc::new(c)],
+            vec![d],
+        )
+        .unwrap();
+
+        // let props = WriterProperties::builder()
+        //     .set_key_value_metadata(Some(vec![KeyValue {
+        //         key: "test_key".to_string(),
+        //         value: Some("test_value".to_string()),
+        //     }]))
+        //     .build();
+
+        let file = get_temp_file("test_arrow_writer_dictionary.parquet", &[]);
+        let mut writer =
+            ArrowWriter::try_new(file, schema, None/* Some(props) */).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+    }
 }
