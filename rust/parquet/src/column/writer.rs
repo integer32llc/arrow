@@ -80,7 +80,6 @@ pub fn get_column_writer(
     props: WriterPropertiesPtr,
     page_writer: Box<PageWriter>,
 ) -> ColumnWriter {
-    dbg!(&descr, &props);
     match descr.physical_type() {
         Type::BOOLEAN => ColumnWriter::BoolColumnWriter(ColumnWriterImpl::new(
             descr,
@@ -209,8 +208,8 @@ impl<T: DataType> ColumnWriterImpl<T> {
         let compressor = create_codec(codec).unwrap();
 
         // Optionally set dictionary encoder.
-        let dict_encoder = if dbg!(props.dictionary_enabled(descr.path()))
-            && dbg!(Self::has_dictionary_support(&props))
+        let dict_encoder = if props.dictionary_enabled(descr.path())
+            && Self::has_dictionary_support(&props)
         {
             Some(DictEncoder::new(descr.clone(), Rc::new(MemTracker::new())))
         } else {
@@ -218,7 +217,7 @@ impl<T: DataType> ColumnWriterImpl<T> {
         };
 
         // Whether or not this column writer has a dictionary encoding.
-        let has_dictionary = dbg!(dict_encoder.is_some());
+        let has_dictionary = dict_encoder.is_some();
 
         // Set either main encoder or fallback encoder.
         let fallback_encoder = get_encoder(
@@ -273,7 +272,7 @@ impl<T: DataType> ColumnWriterImpl<T> {
         null_count: Option<u64>,
         distinct_count: Option<u64>,
     ) -> Result<usize> {
-        dbg!("writing", values);
+        dbg!("write_batch_internal");
         // We check for DataPage limits only after we have inserted the values. If a user
         // writes a large number of values, the DataPage size can be well above the limit.
         //
@@ -372,6 +371,7 @@ impl<T: DataType> ColumnWriterImpl<T> {
         def_levels: Option<&[i16]>,
         rep_levels: Option<&[i16]>,
     ) -> Result<usize> {
+        dbg!("write_batch");
         self.write_batch_internal(
             values, def_levels, rep_levels, &None, &None, None, None,
         )
@@ -437,10 +437,9 @@ impl<T: DataType> ColumnWriterImpl<T> {
         rep_levels: Option<&[i16]>,
         calculate_page_stats: bool,
     ) -> Result<usize> {
+        dbg!("write_mini_batch");
         let num_values;
         let mut values_to_write = 0;
-
-        dbg!(values, def_levels, rep_levels);
 
         // Check if number of definition levels is the same as number of repetition
         // levels.
@@ -566,7 +565,6 @@ impl<T: DataType> ColumnWriterImpl<T> {
     /// size.
     #[inline]
     fn should_dict_fallback(&self) -> bool {
-        dbg!("should_dict_fallback", self.dict_encoder.is_some());
         match self.dict_encoder {
             Some(ref encoder) => {
                 encoder.dict_encoded_size() >= self.props.dictionary_pagesize_limit()
@@ -578,7 +576,6 @@ impl<T: DataType> ColumnWriterImpl<T> {
     /// Returns true if there is enough data for a data page, false otherwise.
     #[inline]
     fn should_add_data_page(&self) -> bool {
-        dbg!("should_add_data_page", self.dict_encoder.is_some());
         match self.dict_encoder {
             Some(ref encoder) => {
                 encoder.estimated_data_encoded_size() >= self.props.data_pagesize_limit()
@@ -847,7 +844,7 @@ impl<T: DataType> ColumnWriterImpl<T> {
     /// Writes dictionary page into underlying sink.
     #[inline]
     fn write_dictionary_page(&mut self) -> Result<()> {
-        dbg!("called");
+        dbg!("write_dictionary_page");
         if self.dict_encoder.is_none() {
             return Err(general_err!("Dictionary encoder is not set"));
         }

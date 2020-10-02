@@ -827,9 +827,27 @@ mod tests {
         // build a record batch
         let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(d)],) .unwrap();
 
+        eprintln!("\n\n\n");
+        dbg!(&batch);
+        eprintln!("\n\n\n");
+
         let file = get_temp_file("test_arrow_writer_dictionary.parquet", &[]);
-        let mut writer = ArrowWriter::try_new(file, schema, None).unwrap();
+        let mut writer = ArrowWriter::try_new(file.try_clone().unwrap(), schema, None).unwrap();
         writer.write(&batch).unwrap();
         writer.close().unwrap();
+
+
+        // ---
+
+
+        let reader = SerializedFileReader::new(file).unwrap();
+        let mut arrow_reader = ParquetFileArrowReader::new(Rc::new(reader));
+        let mut record_batch_reader = arrow_reader.get_record_reader(1024).unwrap();
+
+        let actual_batch = record_batch_reader.next_batch().unwrap().unwrap();
+
+        eprintln!("\n\n\n");
+        dbg!(&actual_batch);
+        eprintln!("\n\n\n");
     }
 }
