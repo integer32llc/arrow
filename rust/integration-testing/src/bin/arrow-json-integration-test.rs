@@ -29,7 +29,7 @@ use arrow::datatypes::{DataType, DateUnit, Field, IntervalUnit, Schema};
 use arrow::error::{ArrowError, Result};
 use arrow::ipc::reader::FileReader;
 use arrow::ipc::writer::FileWriter;
-use arrow::record_batch::{RecordBatch, RecordBatchReader};
+use arrow::record_batch::RecordBatch;
 use arrow::{
     buffer::Buffer,
     buffer::MutableBuffer,
