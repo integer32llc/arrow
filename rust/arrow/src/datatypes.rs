@@ -873,7 +873,7 @@ impl<T: ArrowNativeType> ToByteSlice for T {
 
 impl DataType {
     /// Parse a data type from a JSON representation
-    fn from(json: &Value) -> Result<DataType> {
+    pub(crate) fn from(json: &Value) -> Result<DataType> {
         match *json {
             Value::Object(ref map) => match map.get("name") {
                 Some(s) if s == "null" => Ok(DataType::Null),
@@ -1180,6 +1180,14 @@ impl Field {
     #[inline]
     pub const fn is_nullable(&self) -> bool {
         self.nullable
+    }
+
+    pub fn dict_id(&self) -> i64 {
+        self.dict_id
+    }
+
+    pub fn dict_is_ordered(&self) -> bool {
+        self.dict_is_ordered
     }
 
     /// Parse a `Field` definition from a JSON representation
