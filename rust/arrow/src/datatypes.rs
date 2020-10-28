@@ -1182,6 +1182,15 @@ impl Field {
         self.nullable
     }
 
+    /// Returns the dict_id, if any
+    #[inline]
+    pub fn dict_id(&self) -> Option<i64> {
+        match self.data_type {
+            DataType::Dictionary(_, _) => Some(self.dict_id),
+            _ => None,
+        }
+    }
+
     /// Parse a `Field` definition from a JSON representation
     pub fn from(json: &Value) -> Result<Self> {
         match *json {
@@ -2471,6 +2480,20 @@ mod tests {
         assert_eq!(first_name.name(), "first_name");
         assert_eq!(first_name.data_type(), &DataType::Utf8);
         assert_eq!(first_name.is_nullable(), false);
+        assert_eq!(first_name.dict_id(), None);
+    }
+
+    #[test]
+    fn dictionary_field_accessors() {
+        let dict = Field::new_dict(
+            "c31",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            true,
+            123,
+            true,
+        );
+
+        assert_eq!(dict.dict_id(), Some(123));
     }
 
     #[test]
