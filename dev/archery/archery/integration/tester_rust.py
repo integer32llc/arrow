@@ -24,8 +24,8 @@ from .util import run_cmd, ARROW_ROOT_DEFAULT, log
 class RustTester(Tester):
     PRODUCER = True
     CONSUMER = True
-    # FLIGHT_SERVER = True
-    # FLIGHT_CLIENT = True
+    FLIGHT_SERVER = True
+    FLIGHT_CLIENT = True
 
     EXE_PATH = os.path.join(ARROW_ROOT_DEFAULT, 'rust/target/debug')
 
@@ -34,11 +34,11 @@ class RustTester(Tester):
     STREAM_TO_FILE = os.path.join(EXE_PATH, 'arrow-stream-to-file')
     FILE_TO_STREAM = os.path.join(EXE_PATH, 'arrow-file-to-stream')
 
-    # FLIGHT_SERVER_CMD = [
-    #     os.path.join(EXE_PATH, 'flight-test-integration-server')]
-    # FLIGHT_CLIENT_CMD = [
-    #     os.path.join(EXE_PATH, 'flight-test-integration-client'),
-    #     "-host", "localhost"]
+    FLIGHT_SERVER_CMD = [
+        os.path.join(EXE_PATH, 'flight-test-integration-server')]
+    FLIGHT_CLIENT_CMD = [
+        os.path.join(EXE_PATH, 'flight-test-integration-client'),
+        "-host", "localhost"]
 
     name = 'Rust'
 
