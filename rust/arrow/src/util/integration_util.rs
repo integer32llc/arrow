@@ -45,7 +45,7 @@ pub struct ArrowJsonSchema {
 /// A struct that partially reads the Arrow JSON record batch
 #[derive(Deserialize, Serialize, Debug)]
 pub struct ArrowJsonBatch {
-    count: usize,
+    pub count: usize,
     pub columns: Vec<ArrowJsonColumn>,
 }
 
@@ -53,8 +53,8 @@ pub struct ArrowJsonBatch {
 #[derive(Deserialize, Serialize, Debug)]
 #[allow(non_snake_case)]
 pub struct ArrowJsonDictionaryBatch {
-    id: i64,
-    data: ArrowJsonBatch,
+    pub id: i64,
+    pub data: ArrowJsonBatch,
 }
 
 /// A struct that partially reads the Arrow JSON column/array

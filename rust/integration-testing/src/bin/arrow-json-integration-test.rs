@@ -19,7 +19,7 @@ use clap::{App, Arg};
 use serde_json::Value;
 
 use arrow::util::integration_util::{
-    ArrowJson, ArrowJsonBatch, ArrowJsonColumn, ArrowJsonSchema,
+    ArrowJson, ArrowJsonBatch, ArrowJsonColumn, ArrowJsonDictionaryBatch, ArrowJsonSchema,
 };
 
 use arrow::array::*;
@@ -30,6 +30,7 @@ use arrow::ipc::writer::FileWriter;
 use arrow::record_batch::RecordBatch;
 
 use hex::decode;
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
@@ -94,7 +95,170 @@ fn json_to_arrow(json_name: &str, arrow_name: &str, verbose: bool) -> Result<()>
     Ok(())
 }
 
-fn column_from_json(data_type: &DataType, json_col: ArrowJsonColumn) -> Result<ArrayRef> {
+fn dictionary_from_json(
+    dictionary_array: ArrayRef,
+    index_type: &DataType,
+    json_col: ArrowJsonColumn,
+) -> Result<ArrayRef> {
+    let col: ArrayRef = match index_type {
+        DataType::Int8 => {
+            let mut b = Int8Builder::new(json_col.count);
+            for (is_valid, value) in json_col
+                .validity
+                .as_ref()
+                .unwrap()
+                .iter()
+                .zip(json_col.data.unwrap())
+            {
+                match is_valid {
+                    1 => b.append_value(value.as_i64().unwrap() as i8),
+                    _ => b.append_null(),
+                }
+                .unwrap();
+            }
+            Arc::new(b.finish_dict(dictionary_array))
+        }
+        DataType::Int16 => {
+            let mut b = Int16Builder::new(json_col.count);
+            for (is_valid, value) in json_col
+                .validity
+                .as_ref()
+                .unwrap()
+                .iter()
+                .zip(json_col.data.unwrap())
+            {
+                match is_valid {
+                    1 => b.append_value(value.as_i64().unwrap() as i16),
+                    _ => b.append_null(),
+                }
+                .unwrap();
+            }
+            Arc::new(b.finish_dict(dictionary_array))
+        }
+        DataType::Int32 => {
+            let mut b = Int32Builder::new(json_col.count);
+            for (is_valid, value) in json_col
+                .validity
+                .as_ref()
+                .unwrap()
+                .iter()
+                .zip(json_col.data.unwrap())
+            {
+                match is_valid {
+                    1 => b.append_value(value.as_i64().unwrap() as i32),
+                    _ => b.append_null(),
+                }
+                .unwrap();
+            }
+            Arc::new(b.finish_dict(dictionary_array))
+        }
+        DataType::Int64 => {
+            let mut b = Int64Builder::new(json_col.count);
+            for (is_valid, value) in json_col
+                .validity
+                .as_ref()
+                .unwrap()
+                .iter()
+                .zip(json_col.data.unwrap())
+            {
+                match is_valid {
+                    1 => b.append_value(
+                        value
+                            .as_str()
+                            .unwrap()
+                            .parse()
+                            .expect("Unable to parse string as i64"),
+                    ),
+                    _ => b.append_null(),
+                }
+                .unwrap();
+            }
+            Arc::new(b.finish_dict(dictionary_array))
+        }
+        DataType::UInt8 => {
+            let mut b = UInt8Builder::new(json_col.count);
+            for (is_valid, value) in json_col
+                .validity
+                .as_ref()
+                .unwrap()
+                .iter()
+                .zip(json_col.data.unwrap())
+            {
+                match is_valid {
+                    1 => b.append_value(value.as_u64().unwrap() as u8),
+                    _ => b.append_null(),
+                }
+                .unwrap();
+            }
+            Arc::new(b.finish_dict(dictionary_array))
+        }
+        DataType::UInt16 => {
+            let mut b = UInt16Builder::new(json_col.count);
+            for (is_valid, value) in json_col
+                .validity
+                .as_ref()
+                .unwrap()
+                .iter()
+                .zip(json_col.data.unwrap())
+            {
+                match is_valid {
+                    1 => b.append_value(value.as_u64().unwrap() as u16),
+                    _ => b.append_null(),
+                }
+                .unwrap();
+            }
+            Arc::new(b.finish())
+        }
+        DataType::UInt32 => {
+            let mut b = UInt32Builder::new(json_col.count);
+            for (is_valid, value) in json_col
+                .validity
+                .as_ref()
+                .unwrap()
+                .iter()
+                .zip(json_col.data.unwrap())
+            {
+                match is_valid {
+                    1 => b.append_value(value.as_u64().unwrap() as u32),
+                    _ => b.append_null(),
+                }
+                .unwrap();
+            }
+            Arc::new(b.finish())
+        }
+        DataType::UInt64 => {
+            let mut b = UInt64Builder::new(json_col.count);
+            for (is_valid, value) in json_col
+                .validity
+                .as_ref()
+                .unwrap()
+                .iter()
+                .zip(json_col.data.unwrap())
+            {
+                match is_valid {
+                    1 => b.append_value(
+                        value
+                            .as_str()
+                            .unwrap()
+                            .parse()
+                            .expect("Unable to parse string as u64"),
+                    ),
+                    _ => b.append_null(),
+                }
+                .unwrap();
+            }
+            Arc::new(b.finish())
+        }
+        _ => unreachable!("Not a valid dictionary index type"),
+    };
+    Ok(col)
+}
+
+fn column_from_json(
+    data_type: &DataType,
+    json_col: ArrowJsonColumn,
+    dictionary: Option<&ArrowJsonBatch>,
+) -> Result<ArrayRef> {
     let col: ArrayRef = match data_type {
         DataType::Null => Arc::new(NullArray::new(json_col.count)),
         DataType::Boolean => {
@@ -400,6 +564,19 @@ fn column_from_json(data_type: &DataType, json_col: ArrowJsonColumn) -> Result<A
             }
             Arc::new(b.finish())
         }
+        DataType::Dictionary(index_type, value_type) => {
+            let dictionary =
+                dictionary.expect("DataType::Dictionary should have dictionary values");
+
+            let dictionary_column = dictionary
+                .columns
+                .first()
+                .expect("dictionary must have one column")
+                .to_owned();
+            let dictionary_array = column_from_json(value_type, dictionary_column, None)?;
+
+            dictionary_from_json(dictionary_array, index_type, json_col)?
+        }
         t => {
             return Err(ArrowError::JsonError(format!(
                 "data type {:?} not supported",
@@ -412,12 +589,14 @@ fn column_from_json(data_type: &DataType, json_col: ArrowJsonColumn) -> Result<A
 
 fn record_batch_from_json(
     schema: &Schema,
+    dictionaries: &mut HashMap<i64, ArrowJsonBatch>,
     json_batch: ArrowJsonBatch,
 ) -> Result<RecordBatch> {
     let mut columns = vec![];
 
     for (field, json_col) in schema.fields().iter().zip(json_batch.columns) {
-        let col = column_from_json(field.data_type(), json_col)?;
+        let dictionary = field.dict_id().and_then(|id| dictionaries.get(&id));
+        let col = column_from_json(field.data_type(), json_col, dictionary)?;
         columns.push(col);
     }
 
@@ -520,10 +699,24 @@ fn read_json_file(json_name: &str) -> Result<(Schema, Vec<RecordBatch>)> {
     let reader = BufReader::new(json_file);
     let arrow_json: Value = serde_json::from_reader(reader).unwrap();
     let schema = Schema::from(&arrow_json["schema"])?;
+
+    let mut dictionaries: HashMap<_, _> = arrow_json["dictionaries"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|d| {
+                    let j = serde_json::from_value::<ArrowJsonDictionaryBatch>(d.clone())
+                        .unwrap();
+                    (j.id, j.data)
+                })
+                .collect()
+        })
+        .unwrap_or_else(HashMap::new);
+
     let mut batches = vec![];
     for b in arrow_json["batches"].as_array().unwrap() {
         let json_batch: ArrowJsonBatch = serde_json::from_value(b.clone()).unwrap();
-        let batch = record_batch_from_json(&schema, json_batch)?;
+        let batch = record_batch_from_json(&schema, &mut dictionaries, json_batch)?;
         batches.push(batch);
     }
     Ok((schema, batches))
