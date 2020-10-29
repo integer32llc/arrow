@@ -1580,8 +1580,7 @@ def get_generated_json_files(tempdir=None):
 
         # TODO(ARROW-3039, ARROW-5267): Dictionaries in GO
         generate_dictionary_case()
-        .skip_category('Go')
-        .skip_category('Rust'),
+        .skip_category('Go'),
 
         generate_dictionary_unsigned_case()
         .skip_category('Go')     # TODO(ARROW-9378)
