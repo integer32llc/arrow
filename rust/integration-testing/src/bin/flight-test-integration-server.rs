@@ -16,6 +16,7 @@
 // under the License.
 
 use std::pin::Pin;
+use std::net::SocketAddr;
 
 use futures::Stream;
 use tonic::transport::Server;
@@ -187,12 +188,12 @@ fn to_tonic_err(e: &datafusion::error::DataFusionError) -> Status {
 /// This example is run along-side the example `flight_client`.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "0.0.0.0:50051".parse()?;
+    let addr: SocketAddr = "0.0.0.0:50051".parse()?;
     let service = FlightServiceImpl {};
 
     let svc = FlightServiceServer::new(service);
 
-    println!("Listening on {:?}", addr);
+    println!("Server listening on localhost:{}", addr.port());
 
     Server::builder().add_service(svc).serve(addr).await?;
 
