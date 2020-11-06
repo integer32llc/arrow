@@ -1182,12 +1182,20 @@ impl Field {
         self.nullable
     }
 
-    pub fn dict_id(&self) -> i64 {
-        self.dict_id
+    /// Returns the `dict_id`, if this is a dictionary type
+    pub fn dict_id(&self) -> Option<i64> {
+        match self.data_type {
+            DataType::Dictionary(_, _) => Some(self.dict_id),
+            _ => None,
+        }
     }
 
-    pub fn dict_is_ordered(&self) -> bool {
-        self.dict_is_ordered
+    /// Returns whether the dictionary is ordered, if this is a dictionary type
+    pub fn dict_is_ordered(&self) -> Option<bool> {
+        match self.data_type {
+            DataType::Dictionary(_, _) => Some(self.dict_is_ordered),
+            _ => None,
+        }
     }
 
     /// Parse a `Field` definition from a JSON representation
