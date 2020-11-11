@@ -532,7 +532,6 @@ fn dictionary_array_from_json(
             let keys = array_from_json(&key_field, json_col, None)?;
             // note: not enough info on nullability of dictionary
             let value_field = Field::new("value", dict_value.clone(), true);
-            println!("dictionary value type: {:?}", dict_value);
             let values =
                 array_from_json(&value_field, dictionary.data.columns[0].clone(), None)?;
 
