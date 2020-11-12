@@ -31,11 +31,8 @@ use DataType::*;
 /// Serialize a schema in IPC format
 pub fn schema_to_fb(schema: &Schema) -> FlatBufferBuilder {
     let mut fbb = FlatBufferBuilder::new();
-
     let root = schema_to_fb_offset(&mut fbb, schema);
-
     fbb.finish(root, None);
-
     fbb
 }
 
