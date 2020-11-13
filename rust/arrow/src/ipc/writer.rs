@@ -153,6 +153,7 @@ impl<W: Write> FileWriter<W> {
                 "Cannot write record batch to file writer as it is closed".to_string(),
             ));
         }
+        self.write_dictionaries(&batch)?;
         let message = Message::RecordBatch(batch, &self.write_options);
         let (meta, data) =
             write_message(&mut self.writer, &message, &self.write_options)?;
@@ -164,6 +165,36 @@ impl<W: Write> FileWriter<W> {
         );
         self.record_blocks.push(block);
         self.block_offsets += meta + data;
+        Ok(())
+    }
+
+    pub fn write_dictionaries(&mut self, batch: &RecordBatch) -> Result<()> {
+        // TODO: handle nested dictionaries
+        // TODO: handle repeated dictionaries across record batches
+
+        let schema = batch.schema();
+        for (i, field) in schema.fields().iter().enumerate() {
+            let column = batch.column(i);
+
+            if let DataType::Dictionary(_key_type, _value_type) = column.data_type() {
+                let dict_id = field.dict_id();
+
+                let data = column.data();
+                let message = Message::DictionaryBatch(
+                    dict_id,
+                    &data.child_data()[0],
+                    &self.write_options,
+                );
+
+                let (meta, data) =
+                    write_message(&mut self.writer, &message, &self.write_options)?;
+
+                let block =
+                    ipc::Block::new(self.block_offsets as i64, meta as i32, data as i64);
+                self.dictionary_blocks.push(block);
+                self.block_offsets += meta + data;
+            }
+        }
         Ok(())
     }
 
@@ -307,7 +338,7 @@ pub fn schema_to_bytes(schema: &Schema, write_options: &IpcWriteOptions) -> Enco
 enum Message<'a> {
     Schema(&'a Schema, &'a IpcWriteOptions),
     RecordBatch(&'a RecordBatch, &'a IpcWriteOptions),
-    DictionaryBatch(&'a IpcWriteOptions),
+    DictionaryBatch(i64, &'a ArrayDataRef, &'a IpcWriteOptions),
 }
 
 impl<'a> Message<'a> {
@@ -318,8 +349,8 @@ impl<'a> Message<'a> {
             Message::RecordBatch(batch, options) => {
                 record_batch_to_bytes(*batch, *options)
             }
-            Message::DictionaryBatch(_) => {
-                unimplemented!("Writing dictionary batches not implemented")
+            Message::DictionaryBatch(dict_id, array_data, options) => {
+                dictionary_batch_to_bytes(*dict_id, *array_data, *options)
             }
         }
     }
@@ -431,6 +462,65 @@ pub fn record_batch_to_bytes(
     message.add_bodyLength(arrow_data.len() as i64);
     message.add_header(root);
     let root = message.finish();
+    fbb.finish(root, None);
+    let finished_data = fbb.finished_data();
+
+    EncodedData {
+        ipc_message: finished_data.to_vec(),
+        arrow_data,
+    }
+}
+
+/// Write dictionary values into a tuple of bytes, one for the header (ipc::Message) and the other for the data
+pub fn dictionary_batch_to_bytes(
+    dict_id: i64,
+    array_data: &ArrayDataRef,
+    write_options: &IpcWriteOptions,
+) -> EncodedData {
+    let mut fbb = FlatBufferBuilder::new();
+
+    let mut nodes: Vec<ipc::FieldNode> = vec![];
+    let mut buffers: Vec<ipc::Buffer> = vec![];
+    let mut arrow_data: Vec<u8> = vec![];
+
+    write_array_data(
+        &array_data,
+        &mut buffers,
+        &mut arrow_data,
+        &mut nodes,
+        0,
+        array_data.len(),
+        array_data.null_count(),
+    );
+
+    // write data
+    let buffers = fbb.create_vector(&buffers);
+    let nodes = fbb.create_vector(&nodes);
+
+    let root = {
+        let mut batch_builder = ipc::RecordBatchBuilder::new(&mut fbb);
+        batch_builder.add_length(array_data.len() as i64);
+        batch_builder.add_nodes(nodes);
+        batch_builder.add_buffers(buffers);
+        batch_builder.finish()
+    };
+
+    let root = {
+        let mut batch_builder = ipc::DictionaryBatchBuilder::new(&mut fbb);
+        batch_builder.add_id(dict_id);
+        batch_builder.add_data(root);
+        batch_builder.finish().as_union_value()
+    };
+
+    let root = {
+        let mut message_builder = ipc::MessageBuilder::new(&mut fbb);
+        message_builder.add_version(write_options.metadata_version);
+        message_builder.add_header_type(ipc::MessageHeader::DictionaryBatch);
+        message_builder.add_bodyLength(1); //arrow_data.len() as i64);
+        message_builder.add_header(root);
+        message_builder.finish()
+    };
+
     fbb.finish(root, None);
     let finished_data = fbb.finished_data();
 
@@ -672,6 +762,7 @@ mod tests {
             "generated_primitive_no_batches",
             "generated_primitive_zerolength",
             "generated_primitive",
+            "generated_dictionary",
         ];
         paths.iter().for_each(|path| {
             let file = File::open(format!(
