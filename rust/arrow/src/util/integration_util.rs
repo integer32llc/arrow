@@ -128,7 +128,14 @@ impl ArrowJson {
             let batch = reader.next();
             match batch {
                 Some(Ok(batch)) => col.equals_batch(&batch),
-                _ => false,
+                Some(Err(e)) => {
+                    eprintln!("{}", e);
+                    false
+                }
+                _ => {
+                    dbg!("missing");
+                    false
+                }
             }
         })
     }

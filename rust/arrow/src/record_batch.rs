@@ -96,7 +96,7 @@ impl RecordBatch {
         for (i, column) in columns.iter().enumerate() {
             if column.len() != len {
                 return Err(ArrowError::InvalidArgumentError(
-                    "all columns in a record batch must have the same length".to_string(),
+                    format!("all columns in a record batch must have the same length. first was {}, subsequent was {}", len, column.len()),
                 ));
             }
             // list types can have different names, but we only need the data types to be the same
