@@ -250,10 +250,10 @@ class IntegrationRunner(object):
         consumer.validate(json_path, consumer_file_path)
 
     def _compare_flight_implementations(self, producer, consumer):
-        log('##########################################################')
+        log('##########################################################', flush=True)
         log('Flight: {0} serving, {1} requesting'
-            .format(producer.name, consumer.name))
-        log('##########################################################')
+            .format(producer.name, consumer.name), flush=True)
+        log('##########################################################', flush=True)
 
         case_runner = partial(self._run_flight_test_case, producer, consumer)
         self._run_test_cases(producer, consumer, case_runner,
@@ -265,9 +265,9 @@ class IntegrationRunner(object):
         """
         outcome = Outcome()
 
-        log('=' * 58)
-        log('Testing file {0}'.format(test_case.name))
-        log('=' * 58)
+        log('=' * 58, flush=True)
+        log('Testing file {0}'.format(test_case.name), flush=True)
+        log('=' * 58, flush=True)
 
         if producer.name in test_case.skip:
             log('-- Skipping test because producer {0} does '

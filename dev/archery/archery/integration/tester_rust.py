@@ -55,7 +55,7 @@ class RustTester(Tester):
 
         cmd.append('--mode=' + command)
 
-        if self.debug:
+        if True:
             log(' '.join(cmd))
 
         run_cmd(cmd)
@@ -79,7 +79,7 @@ class RustTester(Tester):
         cmd = self.FLIGHT_SERVER_CMD + ['--port=0']
         if scenario_name:
             cmd = cmd + ["--scenario", scenario_name]
-        if self.debug:
+        if True:
             log(' '.join(cmd))
         server = subprocess.Popen(cmd,
                                   stdout=subprocess.PIPE,
@@ -110,6 +110,6 @@ class RustTester(Tester):
         else:
             raise TypeError("Must provide one of json_path or scenario_name")
 
-        if self.debug:
-            log(' '.join(cmd))
+        if True:
+            log(' '.join(cmd), flush=True)
         run_cmd(cmd)
