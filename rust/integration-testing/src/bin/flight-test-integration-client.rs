@@ -36,6 +36,8 @@ use tonic::{metadata::MetadataValue, Request, Status};
 
 use std::sync::Arc;
 
+use tracing::debug;
+
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 type Result<T = (), E = Error> = std::result::Result<T, E>;
 
@@ -43,6 +45,7 @@ type Client = FlightServiceClient<tonic::transport::Channel>;
 
 #[tokio::main]
 async fn main() -> Result {
+    tracing_subscriber::fmt::init();
     let matches = App::new("rust flight-test-integration-client")
         .arg(Arg::with_name("host").long("host").takes_value(true))
         .arg(Arg::with_name("port").long("port").takes_value(true))
@@ -219,6 +222,7 @@ async fn integration_test_scenario(host: &str, port: &str, path: &str) -> Result
     let url = format!("http://{}:{}", host, port);
 
     let client = FlightServiceClient::connect(url).await?;
+    debug!("client = {:?}", client);
 
     let ArrowFile {
         schema, batches, ..
@@ -253,9 +257,12 @@ async fn upload_data(
     let mut schema_flight_data = FlightData::from(&*schema);
     schema_flight_data.flight_descriptor = Some(descriptor.clone());
     schema_flight_data.app_metadata = "hello".as_bytes().to_vec();
-    upload_tx.send(schema_flight_data).await?;
+    debug!("schema_flight_data = {:?}", schema_flight_data);
+    let foo = upload_tx.send(schema_flight_data).await?;
+    debug!("foo = {:?}", foo);
 
     let resp = client.do_put(Request::new(upload_rx)).await?;
+    debug!("resp = {:?}", resp);
     let mut resp = resp.into_inner();
 
     let r = resp
