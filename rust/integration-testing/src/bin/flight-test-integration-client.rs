@@ -260,44 +260,31 @@ async fn upload_data(
     let foo = upload_tx.send(schema_flight_data).await?;
     debug!("foo = {:?}", foo);
 
-    let mut data_iter = original_data.iter();
-    let counter = 0;
-    let batch = data_iter.next().unwrap();
-    let metadata = counter.to_string().into_bytes();
+    let mut upload_rx_container = Some(upload_rx);
+    let mut resp = None;
 
-    debug!("batch before = {:?}", batch);
-
-    let mut batch = FlightData::from(batch);
-    batch.app_metadata = metadata.clone();
-
-    upload_tx.send(batch).await?;
-
-    let resp = client.do_put(Request::new(upload_rx)).await?;
-    debug!("resp = {:?}", resp);
-    let mut resp = resp.into_inner();
-
-
-    let r = resp
-        .next()
-        .await
-        .expect("No response received")
-        .expect("Invalid response received");
-
-    assert_eq!(r.app_metadata, metadata);
-
-    for (counter, batch) in data_iter.enumerate() {
+    for (counter, batch) in original_data.iter().enumerate() {
         let metadata = counter.to_string().into_bytes();
 
         let mut batch = FlightData::from(batch);
         batch.app_metadata = metadata.clone();
 
         upload_tx.send(batch).await?;
-        let r = resp
-            .next()
-            .await
-            .expect("No response received")
-            .expect("Invalid response received");
-        assert_eq!(metadata, r.app_metadata);
+
+        if let Some(upload_rx) = upload_rx_container.take() {
+            let outer = client.do_put(Request::new(upload_rx)).await?;
+            let inner = outer.into_inner();
+            resp = Some(inner);
+        }
+
+        if let Some(inner) = resp.as_mut() {
+            let r = inner
+                .next()
+                .await
+                .expect("No response received")
+                .expect("Invalid response received");
+            assert_eq!(metadata, r.app_metadata);
+        }
     }
 
     Ok(())
