@@ -29,6 +29,8 @@ use tokio::sync::Mutex;
 use tonic::transport::Server;
 use tonic::{metadata::MetadataMap, Request, Response, Status, Streaming};
 
+use tracing::debug;
+
 use arrow::{datatypes::Schema, record_batch::RecordBatch};
 use arrow_flight::{
     flight_descriptor::DescriptorType, flight_service_server::FlightService,
@@ -121,7 +123,11 @@ impl FlightService for FlightServiceImpl {
         &self,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        debug!("get_flight_info");
+
         let descriptor = request.into_inner();
+
+        debug!("descriptor = {:?}", descriptor);
 
         match descriptor.r#type {
             t if t == DescriptorType::Path as i32 => {
@@ -136,6 +142,9 @@ impl FlightService for FlightServiceImpl {
                 })?;
 
                 let schema_result = SchemaResult::from(&flight.schema);
+                debug!("found flight, schema: {:?}", schema_result);
+                debug!("path[0] = [{:?}]", path[0]);
+                debug!("server_location = [{:?}]", self.server_location);
 
                 let endpoint = FlightEndpoint {
                     ticket: Some(Ticket {
@@ -146,8 +155,11 @@ impl FlightService for FlightServiceImpl {
                     }],
                 };
 
+
                 let total_records: usize =
                     flight.chunks.iter().map(|chunk| chunk.num_rows()).sum();
+
+                debug!("total_records = {}", total_records);
 
                 let info = FlightInfo {
                     schema: schema_result.schema,
@@ -156,6 +168,8 @@ impl FlightService for FlightServiceImpl {
                     total_records: total_records as i64,
                     total_bytes: -1,
                 };
+
+                debug!("sending back info {:?}", info);
 
                 Ok(Response::new(info))
             }
@@ -167,11 +181,14 @@ impl FlightService for FlightServiceImpl {
         &self,
         request: Request<Streaming<FlightData>>,
     ) -> Result<Response<Self::DoPutStream>, Status> {
+        debug!("do_put");
         let mut input_stream = request.into_inner();
         let flight_data = input_stream
             .message()
             .await?
             .ok_or(Status::invalid_argument("Must send some FlightData"))?;
+
+        debug!("flight_data = {:?}", flight_data);
 
         let descriptor = flight_data
             .flight_descriptor
@@ -187,6 +204,7 @@ impl FlightService for FlightServiceImpl {
 
         let schema = Schema::try_from(&flight_data)
             .map_err(|e| Status::invalid_argument(format!("Invalid schema: {:?}", e)))?;
+        debug!("schema = {:?}", schema);
         let schema_ref = Arc::new(schema.clone());
 
         let (mut response_tx, response_rx) = mpsc::channel(10);
@@ -198,12 +216,15 @@ impl FlightService for FlightServiceImpl {
             let mut uploaded_chunks = uploaded_chunks.lock().await;
 
             while let Some(Ok(more_flight_data)) = input_stream.next().await {
+                debug!("more_flight_data: {:?}", more_flight_data);
+                debug!("app_metadata = {:?}", more_flight_data.app_metadata);
                 let stream_result = response_tx
                     .send(Ok(PutResult {
                         app_metadata: more_flight_data.app_metadata.clone(),
                     }))
                     .await;
                 if let Err(e) = stream_result {
+                    debug!("spawned stream_result err: {:?}", e);
                     response_tx
                         .send(Err(Status::internal(format!(
                             "Could not send PutResult: {:?}",
@@ -220,13 +241,16 @@ impl FlightService for FlightServiceImpl {
 
                 match arrow_batch_result {
                     Ok(batch) => chunks.push(batch),
-                    Err(e) => response_tx
+                    Err(e) => {
+                        debug!("Could not convert to RecordBatch: {:?}", e);
+                        response_tx
                         .send(Err(Status::invalid_argument(format!(
                             "Could not convert to RecordBatch: {:?}",
                             e
                         ))))
                         .await
-                        .expect("Error sending error"),
+                        .expect("Error sending error")
+                    }
                 }
             }
 
@@ -538,6 +562,7 @@ type Result<T = (), E = Error> = std::result::Result<T, E>;
 
 #[tokio::main]
 async fn main() -> Result {
+    tracing_subscriber::fmt::init();
     let matches = App::new("rust flight-test-integration-server")
         .about("Integration testing server for Flight.")
         .arg(Arg::with_name("port").long("port").takes_value(true))

@@ -256,14 +256,26 @@ async fn upload_data(
 
     let mut schema_flight_data = FlightData::from(&*schema);
     schema_flight_data.flight_descriptor = Some(descriptor.clone());
-    schema_flight_data.app_metadata = "hello".as_bytes().to_vec();
     debug!("schema_flight_data = {:?}", schema_flight_data);
     let foo = upload_tx.send(schema_flight_data).await?;
     debug!("foo = {:?}", foo);
 
+    let mut data_iter = original_data.iter();
+    let counter = 0;
+    let batch = data_iter.next().unwrap();
+    let metadata = counter.to_string().into_bytes();
+
+    debug!("batch before = {:?}", batch);
+
+    let mut batch = FlightData::from(batch);
+    batch.app_metadata = metadata.clone();
+
+    upload_tx.send(batch).await?;
+
     let resp = client.do_put(Request::new(upload_rx)).await?;
     debug!("resp = {:?}", resp);
     let mut resp = resp.into_inner();
+
 
     let r = resp
         .next()
@@ -271,28 +283,24 @@ async fn upload_data(
         .expect("No response received")
         .expect("Invalid response received");
 
-    assert_eq!(r.app_metadata, "hello".as_bytes());
+    assert_eq!(r.app_metadata, metadata);
 
-    tokio::spawn(async move {
-        for (counter, batch) in original_data.iter().enumerate() {
-            let metadata = counter.to_string().into_bytes();
+    for (counter, batch) in data_iter.enumerate() {
+        let metadata = counter.to_string().into_bytes();
 
-            let mut batch = FlightData::from(batch);
-            batch.flight_descriptor = Some(descriptor.clone());
-            batch.app_metadata = metadata.clone();
+        let mut batch = FlightData::from(batch);
+        batch.app_metadata = metadata.clone();
 
-            upload_tx.send(batch).await?;
-            let r = resp
-                .next()
-                .await
-                .expect("No response received")
-                .expect("Invalid response received");
-            assert_eq!(metadata, r.app_metadata);
-        }
+        upload_tx.send(batch).await?;
+        let r = resp
+            .next()
+            .await
+            .expect("No response received")
+            .expect("Invalid response received");
+        assert_eq!(metadata, r.app_metadata);
+    }
 
-        Ok(())
-    })
-    .await?
+    Ok(())
 }
 
 async fn verify_data(
@@ -303,6 +311,14 @@ async fn verify_data(
 ) -> Result {
     let resp = client.get_flight_info(Request::new(descriptor)).await?;
     let info = resp.into_inner();
+
+    debug!("info received: {:?}", info);
+
+
+    let returned_schema = arrow::ipc::convert::schema_from_bytes(&info.schema).unwrap();
+
+    debug!("returned_schema = {:?}", returned_schema);
+
 
     assert!(
         !info.endpoint.is_empty(),
@@ -318,7 +334,6 @@ async fn verify_data(
             "No locations returned from Flight server",
         );
         for location in endpoint.location {
-            println!("Verifying location {:?}", location);
             consume_flight_location(
                 location,
                 ticket.clone(),

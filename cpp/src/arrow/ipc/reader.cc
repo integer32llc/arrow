@@ -25,6 +25,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include <flatbuffers/flatbuffers.h>  // IWYU pragma: export
 
@@ -763,6 +764,8 @@ class RecordBatchStreamReaderImpl : public RecordBatchStreamReader {
     }
 
     if (empty_stream_) {
+        std::cout << "empty_stream_ degenerate case " << std::endl;
+
       // ARROW-6006: Degenerate case where stream contains no data, we do not
       // bother trying to read a RecordBatch message from the stream
       *batch = nullptr;
@@ -785,6 +788,8 @@ class RecordBatchStreamReaderImpl : public RecordBatchStreamReader {
     }
 
     CHECK_HAS_BODY(*message);
+    std::cout << "message body " << message->body() << std::endl;
+
     ARROW_ASSIGN_OR_RAISE(auto reader, Buffer::GetReader(message->body()));
     return ReadRecordBatchInternal(*message->metadata(), schema_, field_inclusion_mask_,
                                    &dictionary_memo_, options_, reader.get())

@@ -93,6 +93,7 @@ class FlightIntegrationTestServer : public FlightServerBase {
 
       FlightInfo::Data flight_data;
       RETURN_NOT_OK(internal::SchemaToString(*flight.schema, &flight_data.schema));
+      std::cout << "flight_data.schema " << flight_data.schema << std::endl;
       flight_data.descriptor = request;
       flight_data.endpoints = {endpoint1};
       flight_data.total_records = 0;
@@ -127,7 +128,9 @@ class FlightIntegrationTestServer : public FlightServerBase {
   Status DoPut(const ServerCallContext& context,
                std::unique_ptr<FlightMessageReader> reader,
                std::unique_ptr<FlightMetadataWriter> writer) override {
+    std::cout << "DoPut" << std::endl;
     const FlightDescriptor& descriptor = reader->descriptor();
+    std::cout << "descriptor" << &descriptor.type << std::endl;
 
     if (descriptor.type != FlightDescriptor::DescriptorType::PATH) {
       return Status::Invalid("Must specify a path");
@@ -136,20 +139,39 @@ class FlightIntegrationTestServer : public FlightServerBase {
     }
 
     std::string key = descriptor.path[0];
+    std::cout << "key " << key << std::endl;
 
     IntegrationDataset dataset;
     ARROW_ASSIGN_OR_RAISE(dataset.schema, reader->GetSchema());
+    std::cout << "schema" << dataset.schema << std::endl;
+
     arrow::flight::FlightStreamChunk chunk;
     while (true) {
+        std::cout << "while true" << std::endl;
+
       RETURN_NOT_OK(reader->Next(&chunk));
+      std::cout << "reader next" << &chunk.data << std::endl;
+
       if (chunk.data == nullptr) break;
+      std::cout << "past break on nullptr " << &chunk.data << std::endl;
+
       RETURN_NOT_OK(chunk.data->ValidateFull());
       dataset.chunks.push_back(chunk.data);
+      std::cout << "past chunks validate and push" << std::endl;
+
       if (chunk.app_metadata) {
+          std::cout << "app metadata" << chunk.app_metadata << std::endl;
+
         RETURN_NOT_OK(writer->WriteMetadata(*chunk.app_metadata));
       }
+      std::cout << "end while" << std::endl;
+
     }
+    std::cout << "while false" << std::endl;
+
     uploaded_chunks[key] = dataset;
+    std::cout << "saved chunks" << std::endl;
+
     return Status::OK();
   }
 

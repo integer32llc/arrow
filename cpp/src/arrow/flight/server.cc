@@ -169,12 +169,14 @@ class FlightMessageReaderImpl : public FlightMessageReader {
     internal::FlightData* data;
     peekable_reader_->Peek(&data);
     if (!data) {
+      std::cout << "no data here" << std::endl;
       out->app_metadata = nullptr;
       out->data = nullptr;
       return Status::OK();
     }
 
     if (!data->metadata) {
+        std::cout << "no data metadata" << std::endl;
       // Metadata-only (data->metadata is the IPC header)
       out->app_metadata = data->app_metadata;
       out->data = nullptr;
@@ -183,6 +185,8 @@ class FlightMessageReaderImpl : public FlightMessageReader {
     }
 
     if (!batch_reader_) {
+        std::cout << "no batch_reader_ " << std::endl;
+
       RETURN_NOT_OK(EnsureDataStarted());
       // re-peek here since EnsureDataStarted() advances the stream
       return Next(out);

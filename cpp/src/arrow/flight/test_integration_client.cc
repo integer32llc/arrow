@@ -79,7 +79,7 @@ Status UploadBatchesToFlight(const std::vector<std::shared_ptr<RecordBatch>>& ch
                              " but got nothing.");
     } else if (!ack_metadata->Equals(*metadata)) {
       return Status::Invalid("Expected metadata value: ", metadata->ToString(),
-                             " but got: ", ack_metadata->ToString());
+                             " but got: [", ack_metadata->ToString(), "]");
     }
     counter++;
   }
