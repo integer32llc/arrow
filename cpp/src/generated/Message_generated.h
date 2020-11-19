@@ -483,6 +483,17 @@ struct Message FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
     return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<org::apache::arrow::flatbuf::KeyValue>> *>(VT_CUSTOM_METADATA);
   }
   bool Verify(flatbuffers::Verifier &verifier) const {
+      std::cout << "VerifyTableStart(verifier) = " << VerifyTableStart(verifier) << std::endl;
+      std::cout << "VerifyField<int16_t>(verifier, VT_VERSION) = " << VerifyField<int16_t>(verifier, VT_VERSION) << std::endl;
+      std::cout << "VerifyField<uint8_t>(verifier, VT_HEADER_TYPE) = " << VerifyField<uint8_t>(verifier, VT_HEADER_TYPE) << std::endl;
+      std::cout << "VerifyOffset(verifier, VT_HEADER) = " << VerifyOffset(verifier, VT_HEADER) << std::endl;
+      std::cout << "VerifyMessageHeader(verifier, header(), header_type()) = " << VerifyMessageHeader(verifier, header(), header_type()) << std::endl;
+      std::cout << "VerifyField<int64_t>(verifier, VT_BODYLENGTH) = " << VerifyField<int64_t>(verifier, VT_BODYLENGTH) << std::endl;
+      std::cout << "VerifyOffset(verifier, VT_CUSTOM_METADATA) = " << VerifyOffset(verifier, VT_CUSTOM_METADATA) << std::endl;
+      std::cout << "verifier.VerifyVector(custom_metadata()) = " << verifier.VerifyVector(custom_metadata()) << std::endl;
+      std::cout << "verifier.VerifyVectorOfTables(custom_metadata()) = " << verifier.VerifyVectorOfTables(custom_metadata()) << std::endl;
+      std::cout << "verifier.EndTable() = " << verifier.EndTable() << std::endl;
+
     return VerifyTableStart(verifier) &&
            VerifyField<int16_t>(verifier, VT_VERSION) &&
            VerifyField<uint8_t>(verifier, VT_HEADER_TYPE) &&

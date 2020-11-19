@@ -23,6 +23,9 @@
 #  include <cmath>
 #endif
 
+#include <iostream>
+
+
 namespace flatbuffers {
 // Generic 'operator==' with conditional specialisations.
 // T e - new value of a scalar field.
@@ -2273,6 +2276,8 @@ class Verifier FLATBUFFERS_FINAL_CLASS {
                        !BufferHasIdentifier(buf_ + start, identifier))) {
       return false;
     }
+    std::cout << "Got here" << std::endl;
+    std::cout << "start = [" << start << "]" << std::endl;
 
     // Call T::Verify, which must be in the generated code for this type.
     auto o = VerifyOffset(start);
@@ -2299,15 +2304,26 @@ class Verifier FLATBUFFERS_FINAL_CLASS {
   }
 
   uoffset_t VerifyOffset(size_t start) const {
+      std::cout << "in VerifyOffset" << std::endl;
     if (!Verify<uoffset_t>(start)) return 0;
+    std::cout << "heeere" << std::endl;
+
     auto o = ReadScalar<uoffset_t>(buf_ + start);
+    std::cout << "this o SEEMS BAD = [" << o << "]" << std::endl;
+
     // May not point to itself.
     if (!Check(o != 0)) return 0;
+    std::cout << "here i aaaam" << std::endl;
+
     // Can't wrap around / buffers are max 2GB.
     if (!Check(static_cast<soffset_t>(o) >= 0)) return 0;
+    std::cout << "now here" << std::endl;
+
     // Must be inside the buffer to create a pointer from it (pointer outside
     // buffer is UB).
     if (!Verify(start + o, 1)) return 0;
+    std::cout << "and scene" << std::endl;
+
     return o;
   }
 

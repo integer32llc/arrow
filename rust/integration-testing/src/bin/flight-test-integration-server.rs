@@ -77,10 +77,13 @@ impl FlightService for FlightServiceImpl {
         &self,
         request: Request<Ticket>,
     ) -> Result<Response<Self::DoGetStream>, Status> {
+        debug!("do_get");
         let ticket = request.into_inner();
 
         let key = String::from_utf8(ticket.ticket.to_vec())
             .map_err(|e| Status::invalid_argument(format!("Invalid ticket: {:?}", e)))?;
+
+        debug!("key = [{}]", key);
 
         let uploaded_chunks = self.uploaded_chunks.lock().await;
 
@@ -96,6 +99,7 @@ impl FlightService for FlightServiceImpl {
                 let mut flight_data = FlightData::from(batch);
                 let metadata = counter.to_string().into_bytes();
                 flight_data.app_metadata = metadata;
+                debug!("flight_data = {:?}", flight_data);
                 Ok(flight_data)
             })
             .collect();
