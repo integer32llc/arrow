@@ -110,6 +110,9 @@ class AuthBasicProtoScenario : public Scenario {
 /// the call fails, but C++ generally doesn't do this. The integration
 /// test confirms the presence of this header to ensure we can read it
 /// regardless of what gRPC does.
+
+// oh no https://github.com/hyperium/tonic/blob/eba7ec7b32fb96938cbdc3d2dfd91c238afda0dc/tonic/src/client/grpc.rs#L187-L188
+
 class TestServerMiddleware : public ServerMiddleware {
  public:
   explicit TestServerMiddleware(std::string received) : received_(received) {}
