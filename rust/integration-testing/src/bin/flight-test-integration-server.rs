@@ -409,6 +409,7 @@ impl FlightService for MiddlewareScenarioImpl {
             };
 
             let info = FlightInfo {
+                flight_descriptor: Some(descriptor),
                 endpoint: vec![endpoint],
                 ..Default::default()
             };
