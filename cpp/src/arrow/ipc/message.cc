@@ -48,7 +48,12 @@ namespace ipc {
 class Message::MessageImpl {
  public:
   explicit MessageImpl(std::shared_ptr<Buffer> metadata, std::shared_ptr<Buffer> body)
-      : metadata_(std::move(metadata)), message_(nullptr), body_(std::move(body)) {}
+      : metadata_(std::move(metadata)), message_(nullptr), body_(std::move(body)) {
+    if (body_ == nullptr) {
+      body_ = std::make_shared<Buffer>(nullptr, 0); // kNullBuffer?
+    }
+
+  }
 
   Status Open() {
     RETURN_NOT_OK(
