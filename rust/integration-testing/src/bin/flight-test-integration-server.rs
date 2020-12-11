@@ -209,7 +209,6 @@ impl FlightService for FlightServiceImpl {
 
         let schema = Schema::try_from(&flight_data)
             .map_err(|e| Status::invalid_argument(format!("Invalid schema: {:?}", e)))?;
-
         let schema_ref = Arc::new(schema.clone());
 
         let (mut response_tx, response_rx) = mpsc::channel(10);
@@ -256,7 +255,6 @@ impl FlightService for FlightServiceImpl {
                                 schema_ref.clone(),
                                 &dictionaries_by_field,
                             );
-                            dbg!(&arrow_batch_result);
                             match arrow_batch_result {
                                 Ok(batch) => chunks.push(batch),
                                 Err(e) => {
