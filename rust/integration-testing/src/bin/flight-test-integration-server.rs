@@ -29,7 +29,7 @@ use tokio::sync::Mutex;
 use tonic::transport::Server;
 use tonic::{metadata::MetadataMap, Request, Response, Status, Streaming};
 
-use arrow::ipc::{self, reader};
+use arrow::ipc::{self, reader, writer::{IpcWriteOptions, EncodedData}};
 use arrow::{datatypes::Schema, record_batch::RecordBatch};
 use arrow_flight::{
     flight_descriptor::DescriptorType, flight_service_server::FlightService,
@@ -87,16 +87,13 @@ impl FlightService for FlightServiceImpl {
             Status::not_found(format!("Could not find flight. {}", key))
         })?;
 
-        let schema = std::iter::once(
-            flight_schema(&flight.schema)
-                .map(|data_header| FlightData {
-                    data_header,
-                    ..Default::default()
-                })
-                .map_err(|e| {
-                    Status::internal(format!("Could not generate ipc schema: {}", e))
-                }),
-        );
+        let schema = std::iter::once({
+            let data_header = flight_schema_as_flatbuffer(&flight.schema);
+            Ok(FlightData {
+                data_header,
+                ..Default::default()
+            })
+        });
 
         let batches = flight
             .chunks
@@ -166,7 +163,7 @@ impl FlightService for FlightServiceImpl {
                 let total_records: usize =
                     flight.chunks.iter().map(|chunk| chunk.num_rows()).sum();
 
-                let schema = flight_schema(&flight.schema)
+                let schema = flight_schema_as_message(&flight.schema)
                     .expect("Could not generate schema bytes");
 
                 let info = FlightInfo {
@@ -330,21 +327,27 @@ impl FlightService for FlightServiceImpl {
     }
 }
 
-fn flight_schema(arrow_schema: &Schema) -> Result<Vec<u8>> {
-    use arrow::ipc::{
-        writer::{IpcDataGenerator, IpcWriteOptions},
-        MetadataVersion,
-    };
+fn flight_schema_as_message(arrow_schema: &Schema) -> Result<Vec<u8>> {
+    let wo = IpcWriteOptions::default();
+
+    let encoded_data = flight_schema_as_encoded_data(arrow_schema, &wo);
 
     let mut schema = vec![];
+    arrow::ipc::writer::write_message(&mut schema, encoded_data, &wo)?;
+    Ok(schema)
+}
 
-    let wo = IpcWriteOptions::try_new(8, false, MetadataVersion::V5).unwrap();
+fn flight_schema_as_flatbuffer(arrow_schema: &Schema) -> Vec<u8> {
+    let wo = IpcWriteOptions::default();
+    let encoded_data = flight_schema_as_encoded_data(arrow_schema, &wo);
+    encoded_data.ipc_message
+}
+
+fn flight_schema_as_encoded_data(arrow_schema: &Schema, write_options: &IpcWriteOptions) -> EncodedData {
+    use arrow::ipc::writer::IpcDataGenerator;
 
     let data_gen = IpcDataGenerator::default();
-    let encoded_message = data_gen.schema_to_bytes(arrow_schema, &wo);
-    arrow::ipc::writer::write_message(&mut schema, encoded_message, &wo)?;
-
-    Ok(schema)
+    data_gen.schema_to_bytes(arrow_schema, write_options)
 }
 
 #[derive(Clone, Default)]
