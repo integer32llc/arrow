@@ -17,6 +17,7 @@
 
 #include "arrow/ipc/reader.h"
 
+#include <iostream>
 #include <algorithm>
 #include <climits>
 #include <cstdint>
@@ -557,7 +558,9 @@ Result<std::shared_ptr<RecordBatch>> ReadRecordBatch(
     const IpcReadOptions& options, io::InputStream* file) {
   std::unique_ptr<Message> message;
   RETURN_NOT_OK(ReadContiguousPayload(file, &message));
-  CHECK_HAS_BODY(*message);
+
+  std::cout << "Not checking body 1" << std::endl;
+  // CHECK_HAS_BODY(*message);
   ARROW_ASSIGN_OR_RAISE(auto reader, Buffer::GetReader(message->body()));
   return ReadRecordBatch(*message->metadata(), schema, dictionary_memo, options,
                          reader.get());
@@ -567,7 +570,8 @@ Result<std::shared_ptr<RecordBatch>> ReadRecordBatch(
     const Message& message, const std::shared_ptr<Schema>& schema,
     const DictionaryMemo* dictionary_memo, const IpcReadOptions& options) {
   CHECK_MESSAGE_TYPE(MessageType::RECORD_BATCH, message.type());
-  CHECK_HAS_BODY(message);
+  std::cout << "Not checking body 2" << std::endl;
+  // CHECK_HAS_BODY(message);
   ARROW_ASSIGN_OR_RAISE(auto reader, Buffer::GetReader(message.body()));
   return ReadRecordBatch(*message.metadata(), schema, dictionary_memo, options,
                          reader.get());
@@ -731,6 +735,7 @@ Status ReadDictionary(const Message& message, DictionaryMemo* dictionary_memo,
                       const IpcReadOptions& options, DictionaryKind* kind) {
   // Only invoke this method if we already know we have a dictionary message
   DCHECK_EQ(message.type(), MessageType::DICTIONARY_BATCH);
+  std::cout << "Checking body of dictionary" << std::endl;
   CHECK_HAS_BODY(message);
   ARROW_ASSIGN_OR_RAISE(auto reader, Buffer::GetReader(message.body()));
   return ReadDictionary(*message.metadata(), dictionary_memo, options, kind,
@@ -784,11 +789,19 @@ class RecordBatchStreamReaderImpl : public RecordBatchStreamReader {
       return Status::OK();
     }
 
-    CHECK_HAS_BODY(*message);
-    ARROW_ASSIGN_OR_RAISE(auto reader, Buffer::GetReader(message->body()));
-    return ReadRecordBatchInternal(*message->metadata(), schema_, field_inclusion_mask_,
-                                   &dictionary_memo_, options_, reader.get())
-        .Value(batch);
+    std::cout << "Not checking body 3" << std::endl;
+    // CHECK_HAS_BODY(*message);
+    if (message->body() != nullptr) {
+      ARROW_ASSIGN_OR_RAISE(auto reader, Buffer::GetReader(message->body()));
+      return ReadRecordBatchInternal(*message->metadata(), schema_, field_inclusion_mask_,
+                                     &dictionary_memo_, options_, reader.get())
+          .Value(batch);
+    } else {
+        return ReadRecordBatchInternal(*message->metadata(), schema_, field_inclusion_mask_,
+                                       &dictionary_memo_, options_, nullptr)
+            .Value(batch);
+
+    }
   }
 
   std::shared_ptr<Schema> schema() const override { return out_schema_; }
@@ -936,7 +949,8 @@ class RecordBatchFileReaderImpl : public RecordBatchFileReader {
 
     ARROW_ASSIGN_OR_RAISE(auto message, ReadMessageFromBlock(GetRecordBatchBlock(i)));
 
-    CHECK_HAS_BODY(*message);
+    std::cout << "Not checking body 4" << std::endl;
+    // CHECK_HAS_BODY(*message);
     ARROW_ASSIGN_OR_RAISE(auto reader, Buffer::GetReader(message->body()));
     ARROW_ASSIGN_OR_RAISE(
         auto batch,
@@ -1002,7 +1016,9 @@ class RecordBatchFileReaderImpl : public RecordBatchFileReader {
     for (int i = 0; i < num_dictionaries(); ++i) {
       ARROW_ASSIGN_OR_RAISE(auto message, ReadMessageFromBlock(GetDictionaryBlock(i)));
 
+      std::cout << "Checking body for dictionaries 2" << std::endl;
       CHECK_HAS_BODY(*message);
+
       ARROW_ASSIGN_OR_RAISE(auto reader, Buffer::GetReader(message->body()));
       DictionaryKind kind;
       RETURN_NOT_OK(ReadDictionary(*message->metadata(), &dictionary_memo_, options_,
@@ -1222,7 +1238,8 @@ class StreamDecoder::StreamDecoderImpl : public MessageDecoderListener {
     if (message->type() == MessageType::DICTIONARY_BATCH) {
       return ReadDictionary(*message);
     } else {
-      CHECK_HAS_BODY(*message);
+      std::cout << "Not checking body 5" << std::endl;
+      // CHECK_HAS_BODY(*message);
       ARROW_ASSIGN_OR_RAISE(auto reader, Buffer::GetReader(message->body()));
       ARROW_ASSIGN_OR_RAISE(
           auto batch,
