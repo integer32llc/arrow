@@ -119,19 +119,11 @@ pub fn flight_data_to_arrow_batch(
     data: &FlightData,
     schema: SchemaRef,
     dictionaries_by_field: &[Option<ArrayRef>],
-) -> Option<Result<RecordBatch>> {
+) -> Result<RecordBatch> {
     // check that the data_header is a record batch message
-    let res = arrow::ipc::root_as_message(&data.data_header[..]);
-
-    // Catch error.
-    if let Err(err) = res {
-        return Some(Err(ArrowError::ParseError(format!(
-            "Unable to get root as message: {:?}",
-            err
-        ))));
-    }
-
-    let message = res.unwrap();
+    let message = arrow::ipc::root_as_message(&data.data_header[..]).map_err(|err| {
+        ArrowError::ParseError(format!("Unable to get root as message: {:?}", err))
+    })?;
 
     message
         .header_as_record_batch()
@@ -141,14 +133,14 @@ pub fn flight_data_to_arrow_batch(
             )
         })
         .map_or_else(
-            |err| Some(Err(err)),
+            |err| Err(err),
             |batch| {
-                Some(reader::read_record_batch(
+                reader::read_record_batch(
                     &data.data_body,
                     batch,
                     schema,
                     &dictionaries_by_field,
-                ))
+                )
             },
         )
 }
