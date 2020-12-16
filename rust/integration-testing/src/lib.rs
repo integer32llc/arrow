@@ -38,6 +38,11 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
 
+/// The expected username for the basic auth integration test.
+pub const AUTH_USERNAME: &str = "arrow";
+/// The expected password for the basic auth integration test.
+pub const AUTH_PASSWORD: &str = "flight";
+
 pub struct ArrowFile {
     pub schema: Schema,
     // we can evolve this into a concrete Arrow type
