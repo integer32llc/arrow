@@ -30,7 +30,9 @@ use tonic::transport::Server;
 use tonic::{metadata::MetadataMap, Request, Response, Status, Streaming};
 
 use arrow::ipc::{self, reader};
-use arrow::{datatypes::Schema, record_batch::RecordBatch};
+use arrow::{
+    array::ArrayRef, datatypes::Schema, datatypes::SchemaRef, record_batch::RecordBatch,
+};
 use arrow_flight::{
     flight_descriptor::DescriptorType, flight_service_server::FlightService,
     flight_service_server::FlightServiceServer, Action, ActionType, BasicAuth, Criteria,
@@ -78,6 +80,86 @@ fn endpoint(ticket: &str, location_uri: impl Into<String>) -> FlightEndpoint {
         location: vec![Location {
             uri: location_uri.into(),
         }],
+    }
+}
+
+async fn send_error_and_stop_thread(
+    tx: &mut mpsc::Sender<Result<PutResult, Status>>,
+    msg: &str,
+) -> ! {
+    tx.send(Err(Status::internal(msg)))
+        .await
+        .expect("Error sending error");
+    panic!("Stop the thread on error");
+}
+
+// This needs to be a macro rather than `map_err(|e| tx.send(..).await).unwrap()` because
+// async closures are unstable.
+macro_rules! unwrap_or_send_error {
+    ($result:expr , $fmtstr:literal , $tx:ident) => {
+        match $result {
+            Ok(value) => value,
+            Err(err) => {
+                let msg = format!($fmtstr, err);
+                // This can't call `send_error_and_stop_thread` because the compiler doesn't
+                // recognize that function never returns, even though it has the never type
+                $tx
+                    .send(Err(Status::internal(msg)))
+                    .await
+                    .expect("Error sending error");
+                panic!("Stop the thread on error");
+            }
+        };
+    };
+}
+
+async fn send_app_metadata(
+    tx: &mut mpsc::Sender<Result<PutResult, Status>>,
+    app_metadata: &[u8],
+) {
+    unwrap_or_send_error!(
+        tx.send(Ok(PutResult {
+            app_metadata: app_metadata.to_vec(),
+        }))
+        .await,
+        "Could not send PutResult: {:?}",
+        tx
+    );
+}
+
+async fn record_batch_from_message(
+    message: ipc::Message<'_>,
+    data_body: &[u8],
+    schema_ref: SchemaRef,
+    dictionaries_by_field: &[Option<ArrayRef>],
+    tx: &mut mpsc::Sender<Result<PutResult, Status>>,
+) -> RecordBatch {
+    match message.header_as_record_batch() {
+        None => {
+            send_error_and_stop_thread(
+                tx,
+                "Could not parse message header as record batch",
+            )
+            .await
+        }
+        Some(ipc_batch) => {
+            let arrow_batch_result = reader::read_record_batch(
+                data_body,
+                ipc_batch,
+                schema_ref.clone(),
+                &dictionaries_by_field,
+            );
+            match arrow_batch_result {
+                Ok(batch) => return batch,
+                Err(e) => {
+                    send_error_and_stop_thread(
+                        tx,
+                        &format!("Could not convert to RecordBatch: {:?}", e),
+                    )
+                    .await
+                }
+            }
+        }
     }
 }
 
@@ -261,49 +343,33 @@ impl FlightService for FlightServiceImpl {
             let mut dictionaries_by_field = vec![None; schema_ref.fields().len()];
 
             while let Some(Ok(data)) = input_stream.next().await {
-                let message = arrow::ipc::root_as_message(&data.data_header[..])
-                    .expect("TODO send error");
+                let message = unwrap_or_send_error!(
+                    arrow::ipc::root_as_message(&data.data_header[..]),
+                    "Could not parse message: {:?}",
+                    response_tx
+                );
 
                 match message.header_type() {
                     ipc::MessageHeader::Schema => {
-                        // TODO: send an error to the stream
-                        panic!("Not expecting a schema when messages are read");
+                        send_error_and_stop_thread(
+                            &mut response_tx,
+                            "Not expecting a schema when messages are read",
+                        )
+                        .await;
                     }
                     ipc::MessageHeader::RecordBatch => {
-                        let stream_result = response_tx
-                            .send(Ok(PutResult {
-                                app_metadata: data.app_metadata.clone(),
-                            }))
-                            .await;
-                        if let Err(e) = stream_result {
-                            response_tx
-                                .send(Err(Status::internal(format!(
-                                    "Could not send PutResult: {:?}",
-                                    e
-                                ))))
-                                .await
-                                .expect("Error sending error");
-                        }
+                        send_app_metadata(&mut response_tx, &data.app_metadata).await;
 
-                        // TODO: handle None which means parse failure
-                        if let Some(ipc_batch) = message.header_as_record_batch() {
-                            let arrow_batch_result = reader::read_record_batch(
-                                &data.data_body,
-                                ipc_batch,
-                                schema_ref.clone(),
-                                &dictionaries_by_field,
-                            );
-                            match arrow_batch_result {
-                                Ok(batch) => chunks.push(batch),
-                                Err(e) => response_tx
-                                    .send(Err(Status::invalid_argument(format!(
-                                        "Could not convert to RecordBatch: {:?}",
-                                        e
-                                    ))))
-                                    .await
-                                    .expect("Error sending error"),
-                            }
-                        }
+                        let batch = record_batch_from_message(
+                            message,
+                            &data.data_body,
+                            schema_ref.clone(),
+                            &dictionaries_by_field,
+                            &mut response_tx,
+                        )
+                        .await;
+
+                        chunks.push(batch);
                     }
                     ipc::MessageHeader::DictionaryBatch => {
                         // TODO: handle None which means parse failure
@@ -326,12 +392,13 @@ impl FlightService for FlightServiceImpl {
                         }
                     }
                     t => {
-                        // TODO: send error to stream
-                        panic!(
-                            "Reading types other than record batches not yet supported, \
+                        send_error_and_stop_thread(
+                            &mut response_tx,
+                            &format!("Reading types other than record batches not yet supported, \
                               unable to read {:?}",
-                            t
-                        );
+                            t),
+                        )
+                        .await;
                     }
                 }
             }
