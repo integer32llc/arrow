@@ -83,48 +83,15 @@ fn endpoint(ticket: &str, location_uri: impl Into<String>) -> FlightEndpoint {
     }
 }
 
-async fn send_error_and_stop_thread(
-    tx: &mut mpsc::Sender<Result<PutResult, Status>>,
-    msg: &str,
-) -> ! {
-    tx.send(Err(Status::internal(msg)))
-        .await
-        .expect("Error sending error");
-    panic!("Stop the thread on error");
-}
-
-// This needs to be a macro rather than `map_err(|e| tx.send(..).await).unwrap()` because
-// async closures are unstable.
-macro_rules! unwrap_or_send_error {
-    ($result:expr , $fmtstr:literal , $tx:ident) => {
-        match $result {
-            Ok(value) => value,
-            Err(err) => {
-                let msg = format!($fmtstr, err);
-                // This can't call `send_error_and_stop_thread` because the compiler doesn't
-                // recognize that function never returns, even though it has the never type
-                $tx
-                    .send(Err(Status::internal(msg)))
-                    .await
-                    .expect("Error sending error");
-                panic!("Stop the thread on error");
-            }
-        };
-    };
-}
-
 async fn send_app_metadata(
     tx: &mut mpsc::Sender<Result<PutResult, Status>>,
     app_metadata: &[u8],
-) {
-    unwrap_or_send_error!(
-        tx.send(Ok(PutResult {
-            app_metadata: app_metadata.to_vec(),
-        }))
-        .await,
-        "Could not send PutResult: {:?}",
-        tx
-    );
+) -> Result<(), Status> {
+    tx.send(Ok(PutResult {
+        app_metadata: app_metadata.to_vec(),
+    }))
+        .await
+        .map_err(|e| Status::internal(format!("Could not send PutResult: {:?}", e)))
 }
 
 async fn record_batch_from_message(
@@ -132,35 +99,17 @@ async fn record_batch_from_message(
     data_body: &[u8],
     schema_ref: SchemaRef,
     dictionaries_by_field: &[Option<ArrayRef>],
-    tx: &mut mpsc::Sender<Result<PutResult, Status>>,
-) -> RecordBatch {
-    match message.header_as_record_batch() {
-        None => {
-            send_error_and_stop_thread(
-                tx,
-                "Could not parse message header as record batch",
-            )
-            .await
-        }
-        Some(ipc_batch) => {
-            let arrow_batch_result = reader::read_record_batch(
-                data_body,
-                ipc_batch,
-                schema_ref.clone(),
-                &dictionaries_by_field,
-            );
-            match arrow_batch_result {
-                Ok(batch) => return batch,
-                Err(e) => {
-                    send_error_and_stop_thread(
-                        tx,
-                        &format!("Could not convert to RecordBatch: {:?}", e),
-                    )
-                    .await
-                }
-            }
-        }
-    }
+) -> Result<RecordBatch, Status> {
+    let ipc_batch =  message.header_as_record_batch().ok_or_else(|| Status::internal("Could not parse message header as record batch"))?;
+
+    let arrow_batch_result = reader::read_record_batch(
+        data_body,
+        ipc_batch,
+        schema_ref.clone(),
+        &dictionaries_by_field,
+    );
+
+    arrow_batch_result.map_err(|e| Status::internal(format!("Could not convert to RecordBatch: {:?}", e)))
 }
 
 #[derive(Debug, Clone)]
@@ -332,42 +281,34 @@ impl FlightService for FlightServiceImpl {
             .map_err(|e| Status::invalid_argument(format!("Invalid schema: {:?}", e)))?;
         let schema_ref = Arc::new(schema.clone());
 
-        let (mut response_tx, response_rx) = mpsc::channel(10);
+        let (response_tx, response_rx) = mpsc::channel(10);
 
         let uploaded_chunks = self.uploaded_chunks.clone();
 
-        tokio::spawn(async move {
+        async fn zabba(uploaded_chunks: Arc<Mutex<HashMap<String, IntegrationDataset>>>, schema_ref: Arc<Schema>, mut input_stream: Streaming<FlightData>, mut response_tx: mpsc::Sender<Result<PutResult, Status>>, schema: Schema, key: String) -> Result<(), Status> {
             let mut chunks = vec![];
             let mut uploaded_chunks = uploaded_chunks.lock().await;
 
             let mut dictionaries_by_field = vec![None; schema_ref.fields().len()];
 
             while let Some(Ok(data)) = input_stream.next().await {
-                let message = unwrap_or_send_error!(
-                    arrow::ipc::root_as_message(&data.data_header[..]),
-                    "Could not parse message: {:?}",
-                    response_tx
-                );
+                let message = arrow::ipc::root_as_message(&data.data_header[..])
+                    .map_err(|e| Status::internal(format!("Could not parse message: {:?}", e)))?;
 
                 match message.header_type() {
                     ipc::MessageHeader::Schema => {
-                        send_error_and_stop_thread(
-                            &mut response_tx,
-                            "Not expecting a schema when messages are read",
-                        )
-                        .await;
+                        Err(Status::internal("Not expecting a schema when messages are read"))?
                     }
                     ipc::MessageHeader::RecordBatch => {
-                        send_app_metadata(&mut response_tx, &data.app_metadata).await;
+                        send_app_metadata(&mut response_tx, &data.app_metadata).await?;
 
                         let batch = record_batch_from_message(
                             message,
                             &data.data_body,
                             schema_ref.clone(),
                             &dictionaries_by_field,
-                            &mut response_tx,
                         )
-                        .await;
+                        .await?;
 
                         chunks.push(batch);
                     }
@@ -381,30 +322,32 @@ impl FlightService for FlightServiceImpl {
                                 &mut dictionaries_by_field,
                             );
                             if let Err(e) = dictionary_batch_result {
-                                response_tx
-                                    .send(Err(Status::invalid_argument(format!(
-                                        "Could not convert to Dictionary: {:?}",
-                                        e
-                                    ))))
-                                    .await
-                                    .expect("Error sending error")
+                                Err(Status::invalid_argument(format!(
+                                    "Could not convert to Dictionary: {:?}",
+                                    e
+                                )))?
                             }
                         }
                     }
                     t => {
-                        send_error_and_stop_thread(
-                            &mut response_tx,
-                            &format!("Reading types other than record batches not yet supported, \
-                              unable to read {:?}",
-                            t),
-                        )
-                        .await;
+                        Err(Status::internal(format!("Reading types other than record batches not yet supported, \
+                                                      unable to read {:?}",
+                                                     t)))?;
                     }
                 }
             }
 
             let dataset = IntegrationDataset { schema, chunks };
             uploaded_chunks.insert(key, dataset);
+
+            Ok(())
+        }
+
+        tokio::spawn(async {
+            let mut error_tx = response_tx.clone();
+            if let Err(e) = zabba(uploaded_chunks, schema_ref, input_stream, response_tx, schema, key).await {
+                error_tx.send(Err(e)).await.expect("Error sending error")
+            }
         });
 
         Ok(Response::new(Box::pin(response_rx) as Self::DoPutStream))
