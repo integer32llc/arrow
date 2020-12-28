@@ -1136,8 +1136,6 @@ class File(object):
 
     def skip_category(self, category):
         """Skip this test for the given category.
-
-        Category should be SKIP_ARROW or SKIP_FLIGHT.
         """
         self.skip.add(category)
         return self
