@@ -228,7 +228,11 @@ class ArrowMessage implements AutoCloseable {
   }
 
   public ArrowRecordBatch asRecordBatch() throws IOException {
-    Preconditions.checkArgument(bufs.size() == 1, "A batch can only be consumed if it contains a single ArrowBuf.");
+    Preconditions.checkArgument(
+        bufs.size() == 1,
+        "A batch can only be consumed if it contains a single ArrowBuf. This contains %s",
+        bufs.size()
+    );
     Preconditions.checkArgument(getMessageType() == HeaderType.RECORD_BATCH);
 
     ArrowBuf underlying = bufs.get(0);
@@ -238,7 +242,11 @@ class ArrowMessage implements AutoCloseable {
   }
 
   public ArrowDictionaryBatch asDictionaryBatch() throws IOException {
-    Preconditions.checkArgument(bufs.size() == 1, "A batch can only be consumed if it contains a single ArrowBuf.");
+    Preconditions.checkArgument(
+        bufs.size() == 1,
+        "A batch can only be consumed if it contains a single ArrowBuf. This contains %s",
+        bufs.size()
+    );
     Preconditions.checkArgument(getMessageType() == HeaderType.DICTIONARY_BATCH);
     ArrowBuf underlying = bufs.get(0);
     // Retain a reference to keep the batch alive when the message is closed
