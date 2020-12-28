@@ -1140,6 +1140,12 @@ class File(object):
         self.skip.add(category)
         return self
 
+    def skip_pair(self, producer, consumer):
+        """Skip this test for the given producer/consumer pair.
+        """
+        self.skip.add((producer, consumer))
+        return self
+
 
 def get_field(name, type_, **kwargs):
     if type_ == 'binary':

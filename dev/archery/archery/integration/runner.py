@@ -189,6 +189,11 @@ class IntegrationRunner(object):
                 'not support'.format(consumer.name))
             outcome.skipped = True
 
+        elif (producer.name, consumer.name) in test_case.skip:
+            log('-- Skipping test because producer {0} does '
+                'not support consumer {1}'.format(producer.name, consumer.name))
+            outcome.skipped = True
+
         elif SKIP_ARROW in test_case.skip:
             log('-- Skipping test')
             outcome.skipped = True
@@ -277,6 +282,11 @@ class IntegrationRunner(object):
         elif consumer.name in test_case.skip:
             log('-- Skipping test because consumer {0} does '
                 'not support'.format(consumer.name))
+            outcome.skipped = True
+
+        elif (producer.name, consumer.name) in test_case.skip:
+            log('-- Skipping test because producer {0} does '
+                'not support consumer {1}'.format(producer.name, consumer.name))
             outcome.skipped = True
 
         elif SKIP_FLIGHT in test_case.skip:
